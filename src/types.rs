@@ -4,39 +4,63 @@ use std::fmt::{Formatter, Error};
 use std::default::Default;
 use gfx_device_gl::Texture;
 use std::rc::Rc;
-use crate::graphic::GraphicsEnv;
+use crate::graphic::{GraphicsEnv, SpriteRef};
 use piston_window::texture::ImageSize;
 use piston_window::G2dTexture;
 use std::ops::{DerefMut, Deref};
 use core::slice;
+use uuid::{Uuid, UuidVersion};
+use std::collections::HashMap;
+use std::sync::{RwLock, Arc, RwLockReadGuard, RwLockWriteGuard};
+use std::option::Option;
+use sprite::Sprite;
 
-pub struct Deck(Vec<Card>);
-pub struct Table(Vec<Deck>);
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct DeckRef(Uuid);
+
+#[derive(Debug)]
+pub struct Table(Vec<DeckRef>);
+
+#[derive(Debug)]
+pub struct Deck {
+    id: DeckRef,
+    cards: Vec<Card>,
+}
 
 pub struct Game {
     pub players: Vec<Player>,
-    pub deck: Deck,
+    pub deck: DeckRef,
     pub table: Table,
     pub last_round: bool,
     pub graphics_env: Option<GraphicsEnv>,
+    pub player_turn: Option<u8>,
 }
 
-pub struct Player
-{
+#[derive(Debug)]
+pub struct Player {
+    pub id: u8,
     pub name: String,
-    pub hand: Deck
+    pub hand: DeckRef,
 }
 
+#[derive(Debug, Clone)]
 pub struct Card {
     pub suit: Suit,
     pub value: u8,
+    pub sprite: Option<SpriteRef>,
 }
 
+#[derive(Debug, Clone)]
 pub enum Suit {
     CLUBS,
     SPADES,
     DIAMONDS,
     HEARTS
+}
+
+lazy_static! {
+    static ref DECKS: RwLock<HashMap<DeckRef, Deck>> = RwLock::new(HashMap::new());
 }
 
 impl fmt::Display for Player {
@@ -47,10 +71,16 @@ impl fmt::Display for Player {
 
 impl fmt::Display for Deck {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for c in &self.0 {
+        for c in &self.cards {
             write!(f, "{}, ", &c)?;
         }
         Ok(())
+    }
+}
+
+impl fmt::Display for DeckRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        DECKS.read().unwrap().get(&self).unwrap().fmt(f)
     }
 }
 
@@ -60,7 +90,7 @@ impl fmt::Display for Game {
         for p in &self.players {
             write!(f, "player: {}", &p)?;
         }
-        writeln!(f, "table: \n{}", &self.table)?;
+        //writeln!(f, "table: \n{}", &self.table)?;
         Ok(())
     }
 }
@@ -68,22 +98,13 @@ impl fmt::Display for Game {
 impl Default for Game {
     fn default() -> Self {
         Game{
-            players: vec![],
+            players: vec!(),
             deck: Deck::build(),
-            table: Table(vec![]),
+            table: Table(vec!()),
             last_round: false,
             graphics_env: None::<GraphicsEnv>,
+            player_turn: None
         }
-    }
-}
-
-
-impl fmt::Display for Table {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for p in &self.0 {
-            writeln!(f, "- pile: {}", &p)?;
-        }
-        Ok(())
     }
 }
 
@@ -99,65 +120,92 @@ impl fmt::Display for Card {
     }
 }
 
+impl DeckRef {
+    pub fn is_empty(&self) -> bool {
+        DECKS.read().unwrap().get(&self).unwrap().is_empty()
+    }
+
+    pub fn has_cards(&self, count: usize) -> bool {
+        DECKS.read().unwrap().get(&self).unwrap().has_cards(count)
+    }
+
+    fn append(&mut self, cards: &mut Vec<Card>) {
+        DECKS.write().unwrap().get_mut(&self).unwrap().append(cards)
+    }
+
+    pub fn draw(&mut self, count: usize) -> Option<Vec<Card>> {
+        DECKS.write().unwrap().get_mut(&self).unwrap().draw(count)
+    }
+
+    fn len(&self) -> usize {
+        DECKS.read().unwrap().get(&self).unwrap().len()
+    }
+
+    pub fn iter(&mut self) -> DeckRefIter {
+        DeckRefIter {
+            guard: DECKS.write().unwrap(),
+            deck_ref: self.to_owned()
+        }
+    }
+}
+
 impl Player {
-    pub fn new(name: &str) -> Player {
+    pub fn new(id: u8, name: &str) -> Player {
         Player{
+            id,
             name: name.to_string(),
-            hand: Deck::empty()
+            hand: Deck::empty(),
         }
     }
 }
 
 impl Deck {
-    fn empty() -> Self {
-        Deck(vec![])
+    pub fn empty() -> DeckRef {
+        Self::new(vec![])
     }
 
-    pub fn singleton(card: Card) -> Self {
-        Deck(vec![card])
+    pub fn new(cards: Vec<Card>) -> DeckRef {
+        let deck_ref = DeckRef(Uuid::new(UuidVersion::Random).unwrap());
+        DECKS.write().unwrap().insert(deck_ref, Deck {
+            id: deck_ref,
+            cards
+        });
+        deck_ref
     }
 
-    fn build() -> Self {
-        let mut deck = Vec::new();
+    pub fn singleton(card: Card) -> DeckRef {
+        Self::new(vec![card])
+    }
+
+    fn build() -> DeckRef {
+        let mut cards = Vec::new();
         for value in 1..14 {
-            deck.push(Card{
-                suit: Suit::CLUBS,
-                value
-            })
+            cards.push(Card::new(Suit::CLUBS, value));
         }
         for value in 1..14 {
-            deck.push(Card{
-                suit: Suit::SPADES,
-                value
-            })
+            cards.push(Card::new(Suit::SPADES, value));
         }
         for value in 1..14 {
-            deck.push(Card{
-                suit: Suit::DIAMONDS,
-                value
-            })
+            cards.push(Card::new(Suit::DIAMONDS, value));
         }
         for value in 1..14 {
-            deck.push(Card{
-                suit: Suit::HEARTS,
-                value
-            })
+            cards.push(Card::new(Suit::HEARTS, value));
         }
 
         use rand::seq::SliceRandom;
         use rand::thread_rng;
 
         let mut rng = thread_rng();
-        deck.shuffle(&mut rng);
-        Deck(deck)
+        cards.shuffle(&mut rng);
+        Deck::new(cards)
     }
 
     pub fn draw(&mut self, count: usize) -> Option<Vec<Card>> {
-        match self.0.len() {
+        match self.cards.len() {
             l if count <= l => {
                 let mut res = Vec::new();
                 for _ in 0..count {
-                    res.push(self.0.remove(0));
+                    res.push(self.cards.remove(0));
                 }
                 Some(res)
             },
@@ -170,25 +218,39 @@ impl Deck {
     }
 
     pub fn has_cards(&self, count: usize) -> bool {
-        self.0.len() >= count
+        self.cards.len() >= count
     }
 
     fn append(&mut self, cards: &mut Vec<Card>) {
-        self.0.append(cards);
+        self.cards.append(cards);
     }
 
     fn len(&self) -> usize {
-        self.0.len()
+        self.cards.len()
     }
 }
 
-impl<'a> IntoIterator for &'a Table {
-    type Item = &'a Deck;
-    type IntoIter = slice::Iter<'a, Deck>;
+pub struct DeckRefIter {
+    guard: RwLockWriteGuard<'static, HashMap<DeckRef, Deck>>,
+    deck_ref: DeckRef,
+}
 
-    fn into_iter(self) -> slice::Iter<'a, Deck> {
-        let d: &'a Vec<Deck> = &self.0;
-        d.into_iter()
+impl<'a> IntoIterator for &'a mut DeckRefIter {
+    type Item = &'a mut Card;
+    type IntoIter = ::std::slice::IterMut<'a, Card>;
+
+    fn into_iter(self) -> ::std::slice::IterMut<'a, Card> {
+        self.guard.get_mut(&self.deck_ref).unwrap().cards.iter_mut()
+    }
+}
+
+
+impl<'a> IntoIterator for &'a mut Table {
+    type Item = &'a mut DeckRef;
+    type IntoIter = slice::IterMut<'a, DeckRef>;
+
+    fn into_iter(self) -> slice::IterMut<'a, DeckRef> {
+        self.0.iter_mut()
     }
 }
 
@@ -197,20 +259,43 @@ impl<'a> IntoIterator for &'a Deck {
     type IntoIter = slice::Iter<'a, Card>;
 
     fn into_iter(self) -> slice::Iter<'a, Card> {
-        let d: &'a Vec<Card> = &self.0;
+        let d: &'a Vec<Card> = &self.cards;
         d.into_iter()
     }
 }
 
+/*
+impl<'a> IntoIterator for &'a DeckRef {
+    type Item = &'a Card;
+    type IntoIter = slice::Iter<'a, Card>;
+
+    fn into_iter(self) -> slice::Iter<'a, Card> {
+        let deck: Option<&Deck> = DECKS.read().unwrap().get(&self.0);
+        let d: &'a Vec<Card> = &deck.unwrap().cards;
+        d.into_iter()
+    }
+}
+*/
+
 impl Table {
     pub fn new_pile(&mut self, cards: Vec<Card>) {
-        self.0.push(Deck(cards));
+        self.0.push(Deck::new(cards));
     }
 }
 
 impl Player {
     pub fn deal(&mut self, cards: &mut Vec<Card>) {
         self.hand.append(cards);
+    }
+}
+
+impl Card {
+    pub fn new(suit: Suit, value: u8) -> Card {
+        Card{
+            suit,
+            value,
+            sprite: None
+        }
     }
 }
 
@@ -229,10 +314,12 @@ mod tests {
     #[test]
     fn test_game_creation() {
         let mut p1 = Player{
+            id: 1,
             name: "player1".to_string(),
             hand: Deck(vec![])
         };
         let mut p2 = Player{
+            id: 2,
             name: "player2".to_string(),
             hand: Deck(vec![])
         };

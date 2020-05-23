@@ -1,4 +1,4 @@
-use crate::types::{Game, Card, Suit, Player};
+use crate::types::{Game, Card, Suit, Player, Deck};
 use sprite::{Sprite, Scene};
 use sdl2_window::Sdl2Window;
 use std::rc::Rc;
@@ -12,6 +12,35 @@ use piston::input::{UpdateArgs, RenderArgs};
 use piston_window::TextureSettings;
 use std::iter::IntoIterator;
 use piston::window::Size;
+use uuid::Uuid;
+use std::cell::RefCell;
+use std::sync::{Arc, RwLock};
+
+
+lazy_static! {
+    static ref SPRITES: RwLock<HashMap<SpriteRef, SpriteInfo>> = RwLock::new(HashMap::new());
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct SpriteRef(Uuid);
+
+impl SpriteRef {
+    pub fn new(id: Uuid, sprite_info: SpriteInfo) -> Self {
+        let sprite_ref = SpriteRef(id);
+        SPRITES.write().unwrap().insert(sprite_ref, sprite_info);
+        sprite_ref
+    }
+
+    /*pub fn get_info<'l>(&self) -> &'l SpriteInfo {
+        SPRITES.read().unwrap().get(&self).unwrap()
+    }*/
+}
+
+impl std::convert::From<&Uuid> for SpriteRef {
+    fn from(id: &Uuid) -> Self {
+        SpriteRef(id.to_owned())
+    }
+}
 
 pub struct GraphicsEnv {
     textures: HashMap<TextureKind, Rc<Texture>>,
@@ -22,6 +51,11 @@ pub struct GraphicsEnv {
 pub enum TextureKind {
     BACK,
     CARDS
+}
+
+#[derive(Debug, Clone)]
+pub struct SpriteInfo {
+    card: Card,
 }
 
 impl GraphicsEnv {
@@ -45,63 +79,82 @@ impl GraphicsEnv {
 }
 
 impl Game {
-    pub fn prepare(&mut self, size: &Size, scene: &mut Scene<Texture>) {
-        let (x, y) = (size.width, size.height);
-
+    pub fn prepare(&mut self, scene: &mut Scene<Texture>) {
         let back = {
             self.graphics_env.as_ref().unwrap().get_texture(TextureKind::BACK)
         };
-        let front = {
-            self.graphics_env.as_ref().unwrap().get_texture(TextureKind::CARDS)
+        let mut ge = {
+            self.graphics_env.as_mut().unwrap()
+        };
+
+        for p in &mut self.players {
+            let mut i = 0;
+            for c in &mut p.hand.iter() {
+                let mut sprite = Sprite::from_texture(back.clone());
+                c.sprite = Some(SpriteRef::new(sprite.id(), SpriteInfo{
+                    card: c.to_owned()
+                }));
+                scene.add_child(sprite);
+                i = i + 1;
+            }
+        }
+
+        let mut i = 0;
+        for p in &mut self.table.into_iter() {
+            for c in &mut p.iter() {
+                let mut sprite = Sprite::from_texture(back.clone());
+                c.sprite = Some(SpriteRef::new(sprite.id(), SpriteInfo{
+                    card: c.to_owned()
+                }));
+                scene.add_child(sprite);
+                i = i + 1;
+            }
+        }
+    }
+
+    pub fn update(&mut self, size: &Size, scene: &mut Scene<Texture>) {
+        let (x, y) = (size.width, size.height);
+
+        let ge = {
+            self.graphics_env.as_ref().unwrap()
         };
         let players = {
-            &self.players
+            &mut self.players
         };
         let table = {
-            &self.table
+            &mut self.table
         };
         let deck = {
             &self.deck
         };
 
-        let mut i = 0;
-        for c in players.get(0).unwrap().hand.into_iter() {
-            let mut sprite = Sprite::from_texture(back.clone()); //c.to_sprite(front.clone());
-            sprite.set_position((i as f64 *200 as f64)+(x-90.0), 270.0);
-            i = i + 1;
-            scene.add_child(sprite);
+        let mut pnum = 0;
+        for p in players {
+            let pos = (pnum as f64) *800.0 + 270.0;
+            let mut i = 0;
+            for c in &mut p.hand.iter() {
+                if self.player_turn.is_some() && self.player_turn.unwrap() == pnum {
+                    c.front(scene, ge.get_texture(TextureKind::CARDS));
+                }
+                {
+                    let sprite = scene.child_mut(c.sprite.unwrap().0).unwrap();
+                    i = i + 1;
+                    sprite.set_position((i as f64 * 200 as f64) + (x - 200.0), pos);
+                }
+            }
+            pnum = pnum+1;
         }
 
-        let mut i = 0;
-        for c in players.get(1).unwrap().hand.into_iter() {
-            let mut sprite = c.to_sprite(front.clone());
-            sprite.set_position((i as f64 *200 as f64)+(x-90.0), 670.0);
-            i = i + 1;
-            scene.add_child(sprite);
-        }
 
-/*
         let mut i = 0;
-        for p in table.into_iter() {
-            for c in p.into_iter() {
-                let mut sprite = c.to_sprite(front.clone());
-                sprite.set_position((i as f64 *250 as f64)+(x-350.0), y);
+        for p in &mut table.into_iter() {
+            for c in &mut p.iter() {
+                c.front(scene, ge.get_texture(TextureKind::CARDS));
+                let sprite = scene.child_mut(c.sprite.unwrap().0).unwrap();
                 i = i + 1;
-                scene.add_child(sprite);
+                sprite.set_position((i as f64 *200 as f64)+(x-200.0), 400.0+270.0);
             }
         }
-*/
-/*
-        let mut xx = 300.0;
-        let mut yy = 300.0;
-        for c in deck.into_iter() {
-            let mut sprite = Sprite::from_texture(back.clone());
-            sprite.set_position(xx, yy);
-            xx = xx - 1.5;
-            yy = yy - 2.0;
-            scene.add_child(sprite);
-        }
-*/
     }
 
     pub fn render(&mut self, scene: &mut Scene<Texture>, args: &RenderArgs) {
@@ -119,51 +172,36 @@ impl Game {
             scene.draw(transform, g);
         });
     }
+}
 
-    pub fn update(&mut self, args: &UpdateArgs) {
-        /*if self.graphics_env.is_some() {
-            let ge = self.graphics_env.unwrap();
+impl Card {
+    fn front(&mut self, scene: &mut Scene<Texture>, texture: Rc<Texture>) {
+        if let Some(sprite_ref) = self.sprite {
+            let offset = 15.0;
+            let width = 180.0;
+            let height = 270.0;
 
-            for p in &self.players {
-                p.draw(self.graphics_env.as_mut().unwrap());
-
-        }*/
+            let row = match self.suit {
+                Suit::SPADES => 1.0,
+                Suit::HEARTS => 2.0,
+                Suit::DIAMONDS => 3.0,
+                Suit::CLUBS => 4.0,
+            };
+            let col = self.value as f64;
+            let corners = (offset*col+width*(col-1.0), offset*row+height*(row-1.0), offset*col+width*col, offset*row+height*row);
+            let sprite = scene.child_mut(sprite_ref.0).unwrap();
+            sprite.set_texture(texture);
+            sprite.set_src_rect(rectangle_by_corners(corners.0,
+                                                     corners.1,
+                                                     corners.2,
+                                                     corners.3))
+        }
     }
-}
-
-
-impl Player {
-    fn draw(&self, env: &mut GraphicsEnv) {
-
-
-    }
-}
-
-
-
-trait ToSprite {
-    fn to_sprite(&self, texture: Rc<Texture>) -> Sprite<Texture>;
-}
-
-impl ToSprite for Card {
-    fn to_sprite(&self, texture: Rc<Texture>) -> Sprite<Texture> {
-        let offset = 15.0;
-        let width = 180.0;
-        let height = 270.0;
-
-        let row = match self.suit {
-            Suit::SPADES => 1.0,
-            Suit::HEARTS => 2.0,
-            Suit::DIAMONDS => 3.0,
-            Suit::CLUBS => 4.0,
-        };
-        let col = self.value as f64;
-        let corners = (offset*col+width*(col-1.0), offset*row+height*(row-1.0), offset*col+width*col, offset*row+height*row);
-
-        Sprite::from_texture_rect(texture, rectangle_by_corners(corners.0,
-                                                                    corners.1,
-                                                                    corners.2,
-                                                                    corners.3))
+    fn back(&mut self, scene: &mut Scene<Texture>, texture: Rc<Texture>) {
+        if let Some(sprite_ref) = self.sprite {
+            let sprite = scene.child_mut(sprite_ref.0).unwrap();
+            sprite.set_texture(texture);
+        }
     }
 }
 

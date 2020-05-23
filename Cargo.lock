@@ -1257,6 +1257,7 @@ dependencies = [
  "piston_window",
  "pistoncore-sdl2_window",
  "rand 0.7.3",
+ "uuid",
 ]
 
 [[package]]

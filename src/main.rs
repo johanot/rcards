@@ -25,7 +25,7 @@ use ai_behavior::{
 use sdl2_window::Sdl2Window;
 use graphics::rectangle::{square, rectangle_by_corners};
 use crate::types::{Game, Player, Deck};
-use crate::graphic::{GraphicsEnv, TextureKind};
+use crate::graphic::{GraphicsEnv, TextureKind, SpriteRef};
 use opengl_graphics::GlGraphics;
 use std::collections::HashMap;
 use std::path::Path;
@@ -101,13 +101,17 @@ fn main() {
     // create scene
     let mut scene: Scene<opengl_graphics::Texture> = Scene::new();
 
+    // create players
+    let player1 = Player::new(0, "player1");
+    let player2 = Player::new(1, "player2");
+
     // create game
     let graphics_env = GraphicsEnv::new(GlGraphics::new(opengl));
-    let mut game = Game::new(graphics_env,
-                             vec!(Player::new("player1"), Player::new("player2")));
+    let mut game = Game::new(graphics_env, vec![player1, player2]);
     game.start();
 
-    game.prepare(&window.size(), &mut scene);
+    game.prepare(&mut scene);
+    game.update(&window.size(), &mut scene);
 
     // init rendering
     let mut settings = EventSettings::new();
@@ -121,7 +125,9 @@ fn main() {
                 let my = mouse_pos[1];
                 let [x, y, w, h] = s.bounding_box();
                 if mx >= x && mx <= x+w && my >= y && my <= y+h {
-                    println!("Mouse: {:?} '{} {}', Sprite: {}", button, mouse_pos[0], mouse_pos[1], &s.id());
+                    let si = SpriteRef::from(&s.id());
+                    println!("{:?}", &si);
+                    //println!("print")
                 }
             }
         }
@@ -131,10 +137,6 @@ fn main() {
 
         if let Some(args) = e.render_args() {
             game.render(&mut scene, &args);
-        }
-
-        if let Some(args) = e.update_args() {
-            game.update(&args);
         }
     }
 
