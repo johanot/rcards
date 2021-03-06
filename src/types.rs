@@ -35,6 +35,7 @@ pub struct Game {
     pub last_round: bool,
     pub graphics_env: Option<GraphicsEnv>,
     pub player_turn: Option<u8>,
+    pub interactions: Vec<PlayerInteraction>,
 }
 
 #[derive(Debug)]
@@ -49,6 +50,7 @@ pub struct Card {
     pub suit: Suit,
     pub value: u8,
     pub sprite: Option<SpriteRef>,
+    pub deck: DeckRef,
 }
 
 #[derive(Debug, Clone)]
@@ -103,7 +105,8 @@ impl Default for Game {
             table: Table(vec!()),
             last_round: false,
             graphics_env: None::<GraphicsEnv>,
-            player_turn: None
+            player_turn: None,
+            interactions: vec!(),
         }
     }
 }
@@ -139,6 +142,19 @@ impl DeckRef {
 
     fn len(&self) -> usize {
         DECKS.read().unwrap().get(&self).unwrap().len()
+    }
+
+    fn transfer(&mut self, card: &Card, to: &mut Self) {
+        let mut guard = DECKS.write().unwrap();
+        guard.get_mut(&self).unwrap().remove(card);
+        let card = card.to_owned();
+        //card.deck = to.to_owned();
+        guard.get_mut(&to).unwrap().append(&mut vec!(card));
+    }
+
+    fn remove(&mut self, card: &Card) {
+        let mut guard = DECKS.write().unwrap();
+        guard.get_mut(&self).unwrap().remove(&card);
     }
 
     pub fn iter(&mut self) -> DeckRefIter {
@@ -179,17 +195,18 @@ impl Deck {
 
     fn build() -> DeckRef {
         let mut cards = Vec::new();
+        let mut deck = Deck::empty();
         for value in 1..14 {
-            cards.push(Card::new(Suit::CLUBS, value));
+            cards.push(Card::new(Suit::CLUBS, value, deck));
         }
         for value in 1..14 {
-            cards.push(Card::new(Suit::SPADES, value));
+            cards.push(Card::new(Suit::SPADES, value, deck));
         }
         for value in 1..14 {
-            cards.push(Card::new(Suit::DIAMONDS, value));
+            cards.push(Card::new(Suit::DIAMONDS, value, deck));
         }
         for value in 1..14 {
-            cards.push(Card::new(Suit::HEARTS, value));
+            cards.push(Card::new(Suit::HEARTS, value, deck));
         }
 
         use rand::seq::SliceRandom;
@@ -197,7 +214,8 @@ impl Deck {
 
         let mut rng = thread_rng();
         cards.shuffle(&mut rng);
-        Deck::new(cards)
+        deck.append(&mut cards);
+        deck
     }
 
     pub fn draw(&mut self, count: usize) -> Option<Vec<Card>> {
@@ -227,6 +245,10 @@ impl Deck {
 
     fn len(&self) -> usize {
         self.cards.len()
+    }
+
+    fn remove(&mut self, card: &Card) {
+        self.remove(card);
     }
 }
 
@@ -290,13 +312,27 @@ impl Player {
 }
 
 impl Card {
-    pub fn new(suit: Suit, value: u8) -> Card {
+    pub fn new(suit: Suit, value: u8, deck: DeckRef) -> Card {
         Card{
             suit,
             value,
+            deck,
             sprite: None
         }
     }
+}
+
+pub struct PlayerInteraction {
+    pub player: u8,
+    pub interaction: PlayerInteractionType,
+}
+
+pub enum PlayerInteractionType {
+    LeftMouse(SpriteRef)
+}
+
+impl PlayerInteraction {
+
 }
 
 #[cfg(test)]

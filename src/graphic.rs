@@ -31,9 +31,10 @@ impl SpriteRef {
         sprite_ref
     }
 
-    /*pub fn get_info<'l>(&self) -> &'l SpriteInfo {
-        SPRITES.read().unwrap().get(&self).unwrap()
-    }*/
+    pub fn get_info<'l>(&self) -> SpriteInfo {
+        let guard = SPRITES.read().unwrap();
+        guard.get(&self).unwrap().clone()
+    }
 }
 
 impl std::convert::From<&Uuid> for SpriteRef {
@@ -57,6 +58,8 @@ pub enum TextureKind {
 pub struct SpriteInfo {
     card: Card,
 }
+
+
 
 impl GraphicsEnv {
     pub fn new(gl: GlGraphics) -> Self {
@@ -171,6 +174,10 @@ impl Game {
 
             scene.draw(transform, g);
         });
+    }
+
+    pub fn click(&self, sprite_ref: SpriteRef) {
+        //sprite_ref.get_info().card.click();
     }
 }
 

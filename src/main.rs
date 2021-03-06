@@ -125,8 +125,8 @@ fn main() {
                 let my = mouse_pos[1];
                 let [x, y, w, h] = s.bounding_box();
                 if mx >= x && mx <= x+w && my >= y && my <= y+h {
-                    let si = SpriteRef::from(&s.id());
-                    println!("{:?}", &si);
+                    let sprite_ref = SpriteRef::from(&s.id());
+                    game.click(sprite_ref);
                     //println!("print")
                 }
             }
