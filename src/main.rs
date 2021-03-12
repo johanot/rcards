@@ -109,9 +109,9 @@ fn main() {
     let graphics_env = GraphicsEnv::new(GlGraphics::new(opengl));
     let mut game = Game::new(graphics_env, vec![player1, player2]);
     game.start();
-
     game.prepare(&mut scene);
-    game.update(&window.size(), &mut scene);
+    
+    let window_size = window.size();
 
     // init rendering
     let mut settings = EventSettings::new();
@@ -119,22 +119,26 @@ fn main() {
     let mut events = Events::new(settings);
     let mut mouse_pos = [0.0,0.0];
     while let Some(e) = events.next(&mut window) {
+        if let Some(Button::Keyboard(key)) = e.press_args() {
+            game.keyboard(key);
+        }
         if let Some(Button::Mouse(button)) = e.press_args() {
+            let mut sprite_ref = None;
             for s in scene.children() {
                 let mx = mouse_pos[0];
                 let my = mouse_pos[1];
                 let [x, y, w, h] = s.bounding_box();
                 if mx >= x && mx <= x+w && my >= y && my <= y+h {
-                    let sprite_ref = SpriteRef::from(&s.id());
-                    game.click(sprite_ref);
-                    //println!("print")
+                    sprite_ref = Some(SpriteRef::from(&s.id()));
                 }
             }
+            game.click(sprite_ref);
         }
         e.mouse_cursor(|pos| {
             mouse_pos = pos;
         });
 
+        game.update(&window_size, &mut scene);
         if let Some(args) = e.render_args() {
             game.render(&mut scene, &args);
         }

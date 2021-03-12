@@ -7,6 +7,7 @@ use std::rc::Rc;
 use crate::graphic::{GraphicsEnv, SpriteRef};
 use piston_window::texture::ImageSize;
 use piston_window::G2dTexture;
+use piston::Key;
 use std::ops::{DerefMut, Deref};
 use core::slice;
 use uuid::{Uuid, UuidVersion};
@@ -43,6 +44,7 @@ pub struct Player {
     pub id: u8,
     pub name: String,
     pub hand: DeckRef,
+    pub score: DeckRef,
 }
 
 #[derive(Debug, Clone)]
@@ -53,7 +55,7 @@ pub struct Card {
     pub deck: DeckRef,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Suit {
     CLUBS,
     SPADES,
@@ -163,6 +165,10 @@ impl DeckRef {
             deck_ref: self.to_owned()
         }
     }
+
+    pub fn contains(&self, card: &Card) -> bool {
+        DECKS.read().unwrap().get(&self).unwrap().contains(card)
+    }
 }
 
 impl Player {
@@ -171,6 +177,7 @@ impl Player {
             id,
             name: name.to_string(),
             hand: Deck::empty(),
+            score: Deck::empty(),
         }
     }
 }
@@ -239,6 +246,15 @@ impl Deck {
         self.cards.len() >= count
     }
 
+    pub fn contains(&self, card: &Card) -> bool {
+        for c in self {
+            if c == card {
+                return true;
+            }
+        }
+        false
+    }
+
     fn append(&mut self, cards: &mut Vec<Card>) {
         self.cards.append(cards);
     }
@@ -303,6 +319,15 @@ impl Table {
     pub fn new_pile(&mut self, cards: Vec<Card>) {
         self.0.push(Deck::new(cards));
     }
+
+    pub fn contains(&self, card: &Card) -> bool {
+        for pile in &self.0 {
+            if pile.contains(card) {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 impl Player {
@@ -322,17 +347,24 @@ impl Card {
     }
 }
 
-pub struct PlayerInteraction {
-    pub player: u8,
-    pub interaction: PlayerInteractionType,
+impl PartialEq for Card {
+    fn eq(&self, other: &Self) -> bool {
+        self.suit == other.suit && self.value == other.value
+    }
 }
 
-pub enum PlayerInteractionType {
-    LeftMouse(SpriteRef)
+pub enum PlayerInteraction {
+    Click(SpriteRef),
+    Keyboard(Key)
 }
 
-impl PlayerInteraction {
+pub struct Intent {
 
+}
+
+pub enum IntentError {
+    InvalidIntent,
+    IllegalIntent(String)
 }
 
 #[cfg(test)]

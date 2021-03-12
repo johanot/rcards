@@ -1,4 +1,4 @@
-use crate::types::{Game, Player, Deck};
+use crate::types::{Game, Player, Deck, PlayerInteraction};
 use crate::graphic::GraphicsEnv;
 use std::default::Default;
 use piston::input::UpdateEvent;
@@ -25,6 +25,7 @@ impl Game {
         self.deal_table(2);
         self.deal_each_player(2);
         self.deal_table(2);
+        self.player_turn = Some(0);
     }
 
     fn end_of_round(&mut self) {
@@ -64,8 +65,68 @@ impl Game {
             Err(KasinoError::DeckOrPileEmpty)
         }
     }
+
+    fn current_player<'p>(&'p self) -> Option<&'p Player> {
+        self.player_turn.and_then(|number| self.players.get(number as usize))
+    }
+
+    pub fn try_to_intent(&self) -> Result<(), IntentError> {
+        match self.interactions.len() {
+            1 => {
+                self.interactions.first().as_ref().ok_or(IntentError::Unknown).and_then(|i| {
+                    match i {
+                        PlayerInteraction::Click(sprite_ref) => {
+                            if self.current_player().unwrap().hand.contains(&sprite_ref.get_info().card) {
+                                Err(IntentError::PartialIntent("(d) to drop"))
+                            } else {
+                                Ok(())
+                            }
+                        },
+                        _ => { Ok(()) }
+                    }
+                })
+            },
+            2 => {
+                self.interactions.last().as_ref().ok_or(IntentError::Unknown).and_then(|i| {
+                    match i {
+                        PlayerInteraction::Click(sprite_ref) => {
+                            if self.current_player().unwrap().hand.contains(&sprite_ref.get_info().card) {
+                                Err(IntentError::PartialIntent("(d) to drop"))
+                            } else {
+                                Ok(())
+                            }
+                        },
+                        _ => { Ok(()) }
+                    }
+                }) 
+            }
+            _ => {
+                self.interactions.clear();
+                Err(IntentError::IllegalAction("yet unknown action"))
+            }
+
+
+            /*self.interactions.first().as_ref().ok_or(IntentError::Unknown).and_then(|i| {
+                if self.table.contains(&i.sprite.get_info().card) {
+                    Err(IntentError::PartialIntent("(t) to take"))
+                } else {
+                    Ok(())
+                }
+            })*/
+        } //else {
+
+            //
+        //}
+    }
+}
+
+pub enum IntentError {
+    PartialIntent(&'static str),
+    IllegalAction(&'static str),
+    Unknown
 }
 
 pub enum KasinoError {
+    OtherPlayersCards,
     DeckOrPileEmpty
 }

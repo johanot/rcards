@@ -1,4 +1,5 @@
-use crate::types::{Game, Card, Suit, Player, Deck};
+use crate::types::{Game, Card, Suit, Player, Deck, PlayerInteraction};
+use crate::kasino::IntentError;
 use sprite::{Sprite, Scene};
 use sdl2_window::Sdl2Window;
 use std::rc::Rc;
@@ -10,6 +11,7 @@ use opengl_graphics::{GlGraphics, Texture};
 use std::borrow::ToOwned;
 use piston::input::{UpdateArgs, RenderArgs};
 use piston_window::TextureSettings;
+use piston::Key;
 use std::iter::IntoIterator;
 use piston::window::Size;
 use uuid::Uuid;
@@ -56,7 +58,7 @@ pub enum TextureKind {
 
 #[derive(Debug, Clone)]
 pub struct SpriteInfo {
-    card: Card,
+    pub card: Card,
 }
 
 
@@ -143,6 +145,17 @@ impl Game {
                     let sprite = scene.child_mut(c.sprite.unwrap().0).unwrap();
                     i = i + 1;
                     sprite.set_position((i as f64 * 200 as f64) + (x - 200.0), pos);
+                    sprite.set_rotation(0.0);
+                    for i in &self.interactions {
+                        match i {
+                            PlayerInteraction::Click(sprite_ref) => {
+                                if sprite_ref == &SpriteRef::from(&sprite.id()) {
+                                    sprite.set_rotation(20.0);
+                                }
+                            },
+                            _ => {}
+                        }
+                    }
                 }
             }
             pnum = pnum+1;
@@ -156,6 +169,17 @@ impl Game {
                 let sprite = scene.child_mut(c.sprite.unwrap().0).unwrap();
                 i = i + 1;
                 sprite.set_position((i as f64 *200 as f64)+(x-200.0), 400.0+270.0);
+                sprite.set_rotation(0.0);
+                for i in &self.interactions {
+                    match i {
+                        PlayerInteraction::Click(sprite_ref) => {
+                            if sprite_ref == &SpriteRef::from(&sprite.id()) {
+                                sprite.set_rotation(20.0);
+                            }
+                        },
+                        _ => {}
+                    }
+                }
             }
         }
     }
@@ -176,8 +200,39 @@ impl Game {
         });
     }
 
-    pub fn click(&self, sprite_ref: SpriteRef) {
-        //sprite_ref.get_info().card.click();
+    pub fn keyboard(&mut self, key: Key) {
+        self.interactions.push(PlayerInteraction::Keyboard(key));
+        match self.try_to_intent() {
+            Ok(()) => {},
+            Err(IntentError::PartialIntent(msg)) => {
+                println!("{}", msg);
+            },
+            Err(IntentError::IllegalAction(msg)) => {
+                println!("{}", msg);
+            }
+            Err(_) => {}
+        }
+    }
+
+    pub fn click(&mut self, sprite_ref: Option<SpriteRef>) {
+        if self.player_turn.is_some() {
+            match sprite_ref {
+                Some(sr) => {
+                    self.interactions.push(PlayerInteraction::Click(sr));
+                    match self.try_to_intent() {
+                        Ok(()) => {},
+                        Err(IntentError::PartialIntent(msg)) => {
+                            println!("{}", msg);
+                        },
+                        Err(IntentError::IllegalAction(msg)) => {
+                            println!("{}", msg);
+                        }
+                        Err(_) => {}
+                    }
+                },
+                None => self.interactions.clear()
+            }
+        }
     }
 }
 
